@@ -20,8 +20,10 @@ var (
 type Store interface {
 	CreateShortLink(link *domain.Link) error
 	GetByShortCode(code string) (*domain.Link, error)
-	CreateUser(u *domain.User) error
+	GetByOriginalURL(userID uint64, originalURL string) (*domain.Link, error)
 	IncrementClicks(code string) error
+	CreateUser(u *domain.User) error
+	GetLinksByUserID(userID uint64) ([]*domain.Link, error)
 }
 
 type Service struct {
@@ -36,6 +38,15 @@ func (s *Service) CreateShort(userID uint64, shortCode string, originalURL strin
 	// 1. Validate URL
 	if _, err := url.ParseRequestURI(originalURL); err != nil {
 		return "", ErrInvalidURL
+	}
+
+	existingLink, err := s.store.GetByOriginalURL(userID, originalURL)
+	if err == nil && existingLink != nil {
+		return existingLink.ShortCode, nil
+	}
+	// If error is not "not found", it's a real error
+	if err != nil && err != ErrNotFound {
+		return "", err
 	}
 
 	// CASE 1: User Input
@@ -95,6 +106,14 @@ func (s *Service) GetOriginalAndIncrement(code string) (string, error) {
 	}()
 
 	return link.OriginalUrl, nil
+}
+
+func (s *Service) GetLinkInfo(code string) (*domain.Link, error) {
+	return s.store.GetByShortCode(code)
+}
+
+func (s *Service) GetUserLinks(userID uint64) ([]*domain.Link, error) {
+	return s.store.GetLinksByUserID(userID)
 }
 
 func isValidShortCode(code string) bool {

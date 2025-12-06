@@ -88,3 +88,22 @@ func isUniqueConstraintError(err error) bool {
 	msg := err.Error()
 	return msg != "" && (strings.Contains(msg, "UNIQUE constraint failed") || strings.Contains(msg, "UNIQUE constraint"))
 }
+
+func (s *GormStore) GetLinksByUserID(userID uint64) ([]*domain.Link, error) {
+	var links []*domain.Link
+	if err := s.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&links).Error; err != nil {
+		return nil, err
+	}
+	return links, nil
+}
+
+func (s *GormStore) GetByOriginalURL(userID uint64, originalURL string) (*domain.Link, error) {
+	var l domain.Link
+	if err := s.db.First(&l, "user_id = ? AND original_url = ?", userID, originalURL).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, service.ErrNotFound
+		}
+		return nil, err
+	}
+	return &l, nil
+}

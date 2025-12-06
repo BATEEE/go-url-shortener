@@ -16,6 +16,8 @@ type Service interface {
 	CreateShort(userID uint64, shortCode string, originalURL string) (string, error)
 	GetOriginalAndIncrement(code string) (string, error)
 	CreateUser(email string) (*domain.User, error)
+	GetLinkInfo(code string) (*domain.Link, error)
+	GetUserLinks(userID uint64) ([]*domain.Link, error)
 }
 
 type HTTPHandler struct {
@@ -28,8 +30,11 @@ func NewHandler(s Service) *HTTPHandler {
 	h := &HTTPHandler{svc: s, r: r}
 
 	r.POST("/users", h.createUser)
-
 	r.POST("/users/:user_id/shorten", h.createShort)
+
+	r.GET("/links/:code/info", h.getLinkInfo)
+	r.GET("/users/:user_id/links", h.getUserLinks)
+
 	r.GET("/:code", h.getAndRedirect)
 
 	return h
@@ -37,6 +42,36 @@ func NewHandler(s Service) *HTTPHandler {
 
 func (h *HTTPHandler) Run(addr string) error {
 	return h.r.Run(addr)
+}
+
+func (h *HTTPHandler) getLinkInfo(c *gin.Context) {
+	code := c.Param("code")
+	link, err := h.svc.GetLinkInfo(code)
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Link not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return
+	}
+	c.JSON(http.StatusOK, link)
+}
+
+func (h *HTTPHandler) getUserLinks(c *gin.Context) {
+	uidStr := c.Param("user_id")
+	uid, err := strconv.ParseUint(uidStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user_id"})
+		return
+	}
+
+	links, err := h.svc.GetUserLinks(uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return
+	}
+	c.JSON(http.StatusOK, links)
 }
 
 func (h *HTTPHandler) createUser(c *gin.Context) {
