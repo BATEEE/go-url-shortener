@@ -1,0 +1,7 @@
+*.db
+*.log
+.env
+.DS_Store
+tmp/
+dist/
+vendor/

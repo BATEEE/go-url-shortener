@@ -2,25 +2,29 @@ package main
 
 import (
 	"log"
-	"simple-shortener/handlers"
-	"simple-shortener/store"
-
-	"github.com/gin-gonic/gin"
+	"os"
+	"simple-shortener/handler"
+	repostitory "simple-shortener/repository"
+	"simple-shortener/service"
 )
 
 func main() {
-	// 1. Kết nối Database trước khi chạy server
-	store.InitDB()
+	dbPath := "shortener.db"
+	if p := os.Getenv("SHORTENER_DB"); p != "" {
+		dbPath = p
+	}
 
-	// 2. Tạo router
-	r := gin.Default()
+	store, err := repostitory.NewGormStore(dbPath)
+	if err != nil {
+		log.Fatalf("failed init store: %v", err)
+	}
 
-	// 3. Đăng ký các đường dẫn (API)
-	r.POST("/shorten", handlers.CreateShortLink) // Tạo link
-	r.GET("/:code", handlers.RedirectLink)       // Chuyển hướng
+	svc := service.NewService(store)
 
-	// 4. Chạy server tại cổng 8080
-	r.Run(":8080")
+	h := handler.NewHandler(svc)
 
-	log.Println("------Server is starting!!!")
+	// Start HTTP server (Gin)
+	if err := h.Run(":8080"); err != nil {
+		log.Fatal(err)
+	}
 }
