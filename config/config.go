@@ -8,11 +8,15 @@ type Config struct {
 	DatabasePath string
 }
 
-// Load loads configuration from environment variables with defaults
 func Load() *Config {
+	port := getEnv("PORT", "8080")
+	if port != "" && port[0] != ':' {
+		port = ":" + port
+	}
+
 	return &Config{
 		BaseURL:      getEnv("BASE_URL", "http://localhost:8080"),
-		ServerPort:   getEnv("PORT", ":8080"),
+		ServerPort:   port,
 		DatabasePath: getEnv("DB_PATH", "./shortener.db"),
 	}
 }
