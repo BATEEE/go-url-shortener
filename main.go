@@ -3,28 +3,35 @@ package main
 import (
 	"log"
 	"os"
+	"simple-shortener/config"
 	"simple-shortener/handler"
-	repostitory "simple-shortener/repository"
+	"simple-shortener/repository"
 	"simple-shortener/service"
 )
 
 func main() {
-	dbPath := "shortener.db"
+	// Load configuration
+	cfg := config.Load()
+
+	dbPath := cfg.DatabasePath
 	if p := os.Getenv("SHORTENER_DB"); p != "" {
 		dbPath = p
 	}
 
-	store, err := repostitory.NewGormStore(dbPath)
+	store, err := repository.NewGormStore(dbPath)
 	if err != nil {
 		log.Fatalf("failed init store: %v", err)
 	}
 
 	svc := service.NewService(store)
 
-	h := handler.NewHandler(svc)
+	// Pass baseURL to handler
+	h := handler.NewHandler(svc, cfg.BaseURL)
 
 	// Start HTTP server (Gin)
-	if err := h.Run(":8080"); err != nil {
+	log.Printf("Starting server at %s", cfg.ServerPort)
+	log.Printf("Base URL: %s", cfg.BaseURL)
+	if err := h.Run(cfg.ServerPort); err != nil {
 		log.Fatal(err)
 	}
 }

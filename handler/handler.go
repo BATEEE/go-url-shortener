@@ -7,6 +7,7 @@ import (
 	"simple-shortener/domain/dto"
 	"simple-shortener/service"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,13 +22,14 @@ type Service interface {
 }
 
 type HTTPHandler struct {
-	svc Service
-	r   *gin.Engine
+	svc     Service
+	r       *gin.Engine
+	baseURL string
 }
 
-func NewHandler(s Service) *HTTPHandler {
+func NewHandler(s Service, baseURL string) *HTTPHandler {
 	r := gin.Default()
-	h := &HTTPHandler{svc: s, r: r}
+	h := &HTTPHandler{svc: s, r: r, baseURL: baseURL}
 
 	r.POST("/users", h.createUser)
 	r.POST("/users/:user_id/shorten", h.createShort)
@@ -68,6 +70,10 @@ func (h *HTTPHandler) getUserLinks(c *gin.Context) {
 
 	links, err := h.svc.GetUserLinks(uid)
 	if err != nil {
+		if err.Error() == "user not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 		return
 	}
@@ -111,8 +117,17 @@ func (h *HTTPHandler) createShort(c *gin.Context) {
 
 	code, err := h.svc.CreateShort(uid, req.ShortCode, req.URL)
 	if err != nil {
+		if err.Error() == "user not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+			return
+		}
 		if errors.Is(err, service.ErrCodeExists) {
 			c.JSON(http.StatusConflict, gin.H{"error": "Short code already exists"})
+			return
+		}
+		// Check for duplicate URL error
+		if strings.Contains(err.Error(), "URL already shortened") {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return
 		}
 		if errors.Is(err, service.ErrInvalidURL) || errors.Is(err, service.ErrInvalidCode) {
@@ -125,6 +140,7 @@ func (h *HTTPHandler) createShort(c *gin.Context) {
 
 	resp := dto.CreateShortLinkResponse{
 		ShortCode:   code,
+		ShortURL:    h.baseURL + "/" + code, // Computed from baseURL
 		OriginalUrl: req.URL,
 		UserID:      uid,
 		Clicks:      0,

@@ -1,19 +1,13 @@
-package repostitory
+package repository
 
 import (
 	"errors"
 	"fmt"
 	"simple-shortener/domain"
-	"simple-shortener/service"
 	"strings"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
-)
-
-var (
-	ErrNotFound        = errors.New("not found")
-	EmailAlreadyExists = errors.New("email already exists")
 )
 
 type GormStore struct {
@@ -39,17 +33,28 @@ func (s *GormStore) CreateUser(u *domain.User) error {
 	}
 	if err := s.db.Create(u).Error; err != nil {
 		if isUniqueConstraintError(err) {
-			return errors.New("email already exists")
+			return domain.ErrEmailExists
 		}
 		return err
 	}
 	return nil
 }
 
+func (s *GormStore) GetUserByID(userID uint64) (*domain.User, error) {
+	var user domain.User
+	if err := s.db.First(&user, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
 func (s *GormStore) CreateShortLink(link *domain.Link) error {
 	if err := s.db.Create(link).Error; err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "constraint") {
-			return service.ErrCodeExists
+			return domain.ErrCodeExists
 		}
 		return err
 	}
@@ -60,7 +65,7 @@ func (s *GormStore) GetByShortCode(code string) (*domain.Link, error) {
 	var l domain.Link
 	if err := s.db.First(&l, "short_code = ?", code).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
+			return nil, domain.ErrNotFound
 		}
 		return nil, err
 	}
@@ -75,7 +80,7 @@ func (s *GormStore) IncrementClicks(code string) error {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return ErrNotFound
+		return domain.ErrNotFound
 	}
 	return nil
 }
@@ -101,7 +106,7 @@ func (s *GormStore) GetByOriginalURL(userID uint64, originalURL string) (*domain
 	var l domain.Link
 	if err := s.db.First(&l, "user_id = ? AND original_url = ?", userID, originalURL).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, service.ErrNotFound
+			return nil, domain.ErrNotFound
 		}
 		return nil, err
 	}

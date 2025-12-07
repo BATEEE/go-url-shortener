@@ -9,12 +9,12 @@ import (
 )
 
 var (
-	ErrInvalidURL  = errors.New("URL is invalid")
-	ErrInvalidCode = errors.New("Shortener code is invalid")
-	ErrCodeExists  = errors.New("Exists shortener code")
-	ErrGenFailed   = errors.New("System is busy, try again later")
-	ErrNotFound    = errors.New("URL not found")
-	ErrEmailExists = errors.New("Email already exists")
+	ErrInvalidURL  = domain.ErrInvalidURL
+	ErrInvalidCode = domain.ErrInvalidCode
+	ErrCodeExists  = domain.ErrCodeExists
+	ErrGenFailed   = domain.ErrGenFailed
+	ErrNotFound    = domain.ErrNotFound
+	ErrEmailExists = domain.ErrEmailExists
 )
 
 type Store interface {
@@ -23,6 +23,7 @@ type Store interface {
 	GetByOriginalURL(userID uint64, originalURL string) (*domain.Link, error)
 	IncrementClicks(code string) error
 	CreateUser(u *domain.User) error
+	GetUserByID(userID uint64) (*domain.User, error)
 	GetLinksByUserID(userID uint64) ([]*domain.Link, error)
 }
 
@@ -35,25 +36,55 @@ func NewService(s Store) *Service {
 }
 
 func (s *Service) CreateShort(userID uint64, shortCode string, originalURL string) (string, error) {
-	// 1. Validate URL
+	// Check if user exists
+	_, err := s.store.GetUserByID(userID)
+	if err != nil {
+		if err == ErrNotFound {
+			return "", errors.New("user not found")
+		}
+		return "", err
+	}
+
+	// Validate URL
 	if _, err := url.ParseRequestURI(originalURL); err != nil {
 		return "", ErrInvalidURL
 	}
 
-	existingLink, err := s.store.GetByOriginalURL(userID, originalURL)
-	if err == nil && existingLink != nil {
-		return existingLink.ShortCode, nil
-	}
-	// If error is not "not found", it's a real error
-	if err != nil && err != ErrNotFound {
-		return "", err
-	}
-
-	// CASE 1: User Input
+	// Check short_code provided
 	if shortCode != "" {
 		if !isValidShortCode(shortCode) {
 			return "", ErrInvalidCode
 		}
+
+		// Check if this user already created a link for this URL
+		existingLink, err := s.store.GetByOriginalURL(userID, originalURL)
+		if err == nil && existingLink != nil {
+			return "", errors.New("URL already shortened: " + existingLink.ShortCode)
+		}
+
+		existingByCode, err := s.store.GetByShortCode(shortCode)
+		if err == nil && existingByCode != nil {
+			if existingByCode.UserID == userID && existingByCode.OriginalUrl == originalURL {
+				return existingByCode.ShortCode, nil
+			}
+			return "", ErrCodeExists
+		}
+		if err != nil && err != ErrNotFound {
+			return "", err
+		}
+	}
+
+	// Check if this user already created a link for this URL
+	existingLink, err := s.store.GetByOriginalURL(userID, originalURL)
+	if err == nil && existingLink != nil {
+		return "", errors.New("URL already shortened: " + existingLink.ShortCode)
+	}
+
+	if err != nil && err != ErrNotFound {
+		return "", err
+	}
+
+	if shortCode != "" {
 		link := &domain.Link{
 			UserID:      userID,
 			ShortCode:   shortCode,
@@ -66,7 +97,7 @@ func (s *Service) CreateShort(userID uint64, shortCode string, originalURL strin
 		return shortCode, nil
 	}
 
-	// CASE 2: Random code
+	// Random code generation
 	for i := 0; i < 5; i++ {
 		newCode := utils.GenerateRandomString(6)
 
@@ -113,6 +144,15 @@ func (s *Service) GetLinkInfo(code string) (*domain.Link, error) {
 }
 
 func (s *Service) GetUserLinks(userID uint64) ([]*domain.Link, error) {
+	// Check if user exists
+	_, err := s.store.GetUserByID(userID)
+	if err != nil {
+		if err == ErrNotFound {
+			return nil, errors.New("user not found")
+		}
+		return nil, err
+	}
+
 	return s.store.GetLinksByUserID(userID)
 }
 
